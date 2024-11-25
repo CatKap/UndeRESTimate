@@ -1,0 +1,9 @@
+{
+    "require": {
+        "amphp/http-server": "@dev",
+        "amphp/http-server-router": "@dev",
+        "amphp/postgres": "@dev",
+        "amphp/log": "@dev",
+        "ramphp/router": "@dev"
+    }
+}
