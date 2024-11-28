@@ -48,7 +48,6 @@ $router = new Router($server, $logger, $errorHandler);
 
 $agentModel = new ModelHandler(
     $pool,
-    $errorHandler,
     "AGENT",
     $schema = [
       'address' => 'STRING',
@@ -58,36 +57,62 @@ $agentModel = new ModelHandler(
       ],
     $privateFields = [
       'private_key' => 'STRING',
-      'user_id' => 'INT'
     ]
 );
 
 $fileModel = new ModelHandler(
     $pool,
-    $errorHandler,
     "FILE",
     $schema = ['link' => "STRING"]
 );
 
+
 $buildModel = new ModelHandler(
     $pool,
-    $errorHandler,
-    "BUILD",
+    'BUILD',
     $schema = [
       'name' => 'STRING',
       'deploy_script' => 'STRING',
       'run_script' => 'STRING',
-      'files' => $fileModel->manyRel(),
+      'files' => [$fileModel, 'manyToManyRel']
     ]
 );
 
 
+$buildGropModel = new ModelHandler(
+    $pool,
+    'BUILDGROUP',
+    $schema = [
+      'name' => "STRING",
+      'builds' => [$buildModel, 'manyToManyRel'],
+    ]
+);
 
 
+$userModel = new ModelHandler(
+    $pool,
+    'USERS',
+    $schema = [
+    'email' => 'STRING',
+    'password' => 'STRING'
+    ]
+);
 
 $agentView = new RestResponseHandler($logger, $agentModel);
-
 $agentView->setRoutes($router, '/agent/');
+
+$buildView = new RestResponseHandler($logger, $buildModel);
+$buildView->setRoutes($router, '/build/');
+
+$gropView = new RestResponseHandler($logger, $buildGropModel);
+$gropView->setRoutes($router, '/group/');
+
+$fileView = new RestResponseHandler($logger, $fileModel);
+$fileView->setRoutes($router, '/file/');
+
+$usersView = new RestResponseHandler($logger, $userModel);
+$usersView->setRoutes($router, '/users/');
+
 $server->expose($config['ip']);
 $server->start($router, $errorHandler);
 

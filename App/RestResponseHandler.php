@@ -10,13 +10,13 @@ use Amp\Http\Server\Router;
 
 class RestResponseHandler implements RequestHandler
 {
-    private $modelHandler;
+    private $model;
     private $logger;
 
-    public function __construct($logger, $modelHandler)
+    public function __construct($logger, $model)
     {
         $this->logger = $logger;
-        $this->modelHandler = $modelHandler;
+        $this->model = $model;
     }
 
     // Removes trailing whitespaces
@@ -28,7 +28,7 @@ class RestResponseHandler implements RequestHandler
 
     static function prettifyValue($value)
     {
-        var_dump($value);
+
         if (is_string($value)) {
             return trim($value);
         }
@@ -46,6 +46,7 @@ class RestResponseHandler implements RequestHandler
 
         $args = $request->getAttribute(Router::class);
         $response = call_user_func_array([$this, (string)$request->getMethod()], [$request, isset($args['id']) ? $args['id'] : null]);
+
         return new Response(
             status: $response[0],
             headers: ['Content-Type' => 'application/json'],
@@ -60,31 +61,37 @@ class RestResponseHandler implements RequestHandler
         $router->addRoute('GET', $uri . "{id}/", $this);
         $router->addRoute('POST', $uri, $this);
 
+        $router->addRoute('PUT', $uri, $this);
         $router->addRoute('PUT', $uri . "{id}/", $this);
+        $router->addRoute('PATCH', $uri . "{id}/", $this);
+
         $router->addRoute('DELETE', $uri . "{id}/", $this);
     }
 
     // Array [$status, $body]
     public function GET(Request $request, $id = null): array
     {
+        $querryFilter = new FilterStatement();
+        $querryFilter->fromQuerry($request->getUri()->getQuery());
         if ($id) {
-            $got = $this->modelHandler->getById($id);
+            $got = $this->model->getById($id, true, null, true);
             if (!$got) {
-                $name = $this->modelHandler->tableName;
-                return [HttpStatus::NOT_FOUND, "$name with this id $id is not exsisting!"];
+                $name = $this->model->tableName;
+                return [HttpStatus::NOT_FOUND, self::json(["Error" => "$name with this id $id is not exsisting!"])];
             }
             return [HttpStatus::OK, self::json($got)];
         }
 
-        return [HttpStatus::OK, self::json(iterator_to_array($this->modelHandler->get()))];
+        return [HttpStatus::OK, self::json(iterator_to_array($this->model->get($querryFilter)))];
     }
 
     public function POST(Request $request): array
     {
-        $valid = $this->modelHandler->serialize((string)$request->getBody(), true, true);
+        $valid = $this->model->serialize((string)$request->getBody(), true, true);
         if ($valid) {
-            if ($valid->save()) {
-                return [HttpStatus::OK, self::json($this->modelHandler->data())];
+            if ($id = $valid->save()) {
+                echo "saving";
+                return [HttpStatus::OK, self::json(array_merge($this->model->data(), ["id" => $id]))];
             }
         }
 
@@ -93,20 +100,30 @@ class RestResponseHandler implements RequestHandler
 
     public function PATCH(Request $request, $id): array
     {
-        $valid = $this->modelHandler->serialize((string)$request->getBody(), true, true);
+        echo "PATCH\n";
+        $valid = $this->model->serialize((string)$request->getBody(), true, true);
         if ($valid ? $valid->save($id) : false) {
             return [HttpStatus::OK, self::json($valid->data())];
         }
+        return [HttpStatus::INTERNAL_SERVER_ERROR, self::json(["Error", "Wrong fields parametrs!"])];
     }
 
     public function PUT(Request $request, $id = null): array
     {
-        return [HttpStatus::Ok, self::json(["Ok" => ">k^k<"])];
+        if ($request->isIdempotent()) {
+            $valid = $this->model->serialize((string)$request->getBody(), true, true);
+            if ($valid ? $valid->save() : false) {
+                return [HttpStatus::OK, self::json($valid->data())];
+            } else {
+                return [HttpStatus::INTERNAL_SERVER_ERROR, self::json(["Error" => "Something bad happend"])];
+            }
+        }
+        return [HttpStatus::NOT_MODIFIED, self::json(["Message" => "Request allready served"])];
     }
 
     public function DELETE(Request $request, $id): array
     {
-        if ($ret = $this->modelHandler->deleteBy(new FilterStatement("id", FilterStatement::EQ, $id))) {
+        if ($ret = $this->model->deleteBy(new FilterStatement("id", FilterStatement::EQ, $id))) {
             if ($ret->getRowCount() == 0) {
                 return [HttpStatus::NOT_FOUND, self::json(["Error" => "No such record with id $id. Cannot delete."])];
             }
